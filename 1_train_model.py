@@ -360,6 +360,7 @@ from sklearn.metrics import (
     classification_report, roc_auc_score,
     confusion_matrix, f1_score, recall_score, precision_score
 )
+# pyrefly: ignore [missing-import]
 from imblearn.over_sampling import SMOTE
 import xgboost as xgb
 
