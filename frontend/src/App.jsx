@@ -1,3 +1,4 @@
+import { marked } from 'marked';
 // v-fix-2 — risk stats recomputed client-side from probability records
 import React, { useState, useEffect, useRef } from 'react';
 import { 
@@ -20,9 +21,42 @@ const TYPE_MAP = {
   "H (High)": "H"
 };
 
+
+function MarkdownMessage({ text }) {
+  if (!text) return null;
+  const html = marked.parse(text, { breaks: true, gfm: true });
+  return <div className="markdown-content" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
 export default function App() {
   // Navigation & Config States
   const [activeTab, setActiveTab] = useState('simulator');
+
+  // Multi-Asset Digital Twin States
+  const [activeTwin, setActiveTwin] = useState('milling'); // 'milling', 'hx', 'bearing'
+
+  // Heat Exchanger States
+  const [hxUnit, setHxUnit] = useState('E02');
+  const [hxTubeIn, setHxTubeIn] = useState(150.0);
+  const [hxTubeOut, setHxTubeOut] = useState(180.0);
+  const [hxTubeFlow, setHxTubeFlow] = useState(50.0);
+  const [hxShellIn, setHxShellIn] = useState(200.0);
+  const [hxShellOut, setHxShellOut] = useState(170.0);
+  const [hxShellFlow, setHxShellFlow] = useState(40.0);
+  const [hxHours, setHxHours] = useState(1000.0);
+  const [hxResult, setHxResult] = useState(null);
+  const [hxLoading, setHxLoading] = useState(false);
+
+  // Bearing States
+  const [bearingId, setBearingId] = useState('Bearing1');
+  const [bearingRms, setBearingRms] = useState(0.35);
+  const [bearingKurt, setBearingKurt] = useState(3.4);
+  const [bearingP2P, setBearingP2P] = useState(1.6);
+  const [bearingRpm, setBearingRpm] = useState(2000);
+  const [bearingHours, setBearingHours] = useState(120);
+  const [bearingResult, setBearingResult] = useState(null);
+  const [bearingLoading, setBearingLoading] = useState(false);
+
   const [opMode, setOpMode] = useState('Balanced');
   const [config, setConfig] = useState(null);
   const [activeThresh, setActiveThresh] = useState(0.35);
@@ -98,6 +132,57 @@ export default function App() {
   }, [opMode, config]);
 
   // ─────────────────────────────────────────────
+  
+  // Heat Exchanger Simulation Effect
+  useEffect(() => {
+    setHxLoading(true);
+    const timer = setTimeout(() => {
+      fetch(`${API_BASE}/simulate/hx`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          exchanger_id: hxUnit,
+          tube_t_in: hxTubeIn,
+          tube_t_out: hxTubeOut,
+          tube_flow: hxTubeFlow,
+          shell_t_in: hxShellIn,
+          shell_t_out: hxShellOut,
+          shell_flow: hxShellFlow,
+          time_hr: hxHours
+        })
+      })
+      .then(res => res.json())
+      .then(data => { setHxResult(data); setHxLoading(false); })
+      .catch(err => { console.error('HX error:', err); setHxLoading(false); });
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [hxUnit, hxTubeIn, hxTubeOut, hxTubeFlow, hxShellIn, hxShellOut, hxShellFlow, hxHours]);
+
+  // Bearing Simulation Effect
+  useEffect(() => {
+    setBearingLoading(true);
+    const timer = setTimeout(() => {
+      fetch(`${API_BASE}/simulate/bearing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bearing_id: bearingId,
+          rms: bearingRms,
+          kurtosis: bearingKurt,
+          peak: bearingRms * 2.8,
+          peak_to_peak: bearingP2P,
+          crest_factor: 3.2,
+          hours_elapsed: bearingHours,
+          rpm: bearingRpm
+        })
+      })
+      .then(res => res.json())
+      .then(data => { setBearingResult(data); setBearingLoading(false); })
+      .catch(err => { console.error('Bearing error:', err); setBearingLoading(false); });
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [bearingId, bearingRms, bearingKurt, bearingP2P, bearingHours, bearingRpm]);
+
   // RUN SIMULATOR inference
   // ─────────────────────────────────────────────
   useEffect(() => {
@@ -458,6 +543,286 @@ export default function App() {
            ───────────────────────────────────────────── */}
         {activeTab === 'simulator' && !apiError && simResult && (
           <div>
+
+            {/* Twin Switcher Sub-Navbar */}
+            <div className="twin-subnav">
+              <button className={`twin-subnav-btn ${activeTwin === 'milling' ? 'active' : ''}`} onClick={() => setActiveTwin('milling')}>
+                ⚙️ CNC Milling Machine
+              </button>
+              <button className={`twin-subnav-btn ${activeTwin === 'hx' ? 'active' : ''}`} onClick={() => setActiveTwin('hx')}>
+                🌡️ Shell & Tube Heat Exchanger
+              </button>
+              <button className={`twin-subnav-btn ${activeTwin === 'bearing' ? 'active' : ''}`} onClick={() => setActiveTwin('bearing')}>
+                🔄 IMS Rotating Bearing Rig
+              </button>
+            </div>
+
+            {/* ------------------------------------------------------------- */}
+            {/* TWIN 2: HEAT EXCHANGER CONTROLS & GAUGES */}
+            {/* ------------------------------------------------------------- */}
+            {activeTwin === 'hx' && (
+              <div>
+                <div className="section-header">🌡️ Heat Exchanger Fouling & Thermal Performance Twin</div>
+                <div className="grid-2">
+                  <div className="glass-card">
+                    <h4>🛠️ Process Stream Controls</h4>
+                    <div className="form-group">
+                      <label>Exchanger Unit in Preheat Train</label>
+                      <select className="form-select" value={hxUnit} onChange={(e) => setHxUnit(e.target.value)}>
+                        <option value="E01">E01 — Heavy Naphtha Shell Pass</option>
+                        <option value="E02">E02 — Kerosene Shell Pass (High Fouling Risk)</option>
+                        <option value="E03">E03 — Light Diesel Shell Pass</option>
+                        <option value="E04">E04 — Light Vacuum Gas Oil (LVGO)</option>
+                        <option value="E05">E05 — Heavy Diesel Shell Pass</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Crude Tube Inlet Temperature (°C)</label>
+                      <div className="slider-container">
+                        <input type="range" className="slider-input" min="100" max="220" step="1" value={hxTubeIn} onChange={(e) => setHxTubeIn(parseFloat(e.target.value))} />
+                        <span className="slider-value">{hxTubeIn}°C</span>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Crude Tube Outlet Temperature (°C)</label>
+                      <div className="slider-container">
+                        <input type="range" className="slider-input" min="120" max="260" step="1" value={hxTubeOut} onChange={(e) => setHxTubeOut(parseFloat(e.target.value))} />
+                        <span className="slider-value">{hxTubeOut}°C</span>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Crude Mass Flow Rate (kg/s)</label>
+                      <div className="slider-container">
+                        <input type="range" className="slider-input" min="10" max="80" step="1" value={hxTubeFlow} onChange={(e) => setHxTubeFlow(parseFloat(e.target.value))} />
+                        <span className="slider-value">{hxTubeFlow} kg/s</span>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Shell Product Inlet Temperature (°C)</label>
+                      <div className="slider-container">
+                        <input type="range" className="slider-input" min="150" max="300" step="1" value={hxShellIn} onChange={(e) => setHxShellIn(parseFloat(e.target.value))} />
+                        <span className="slider-value">{hxShellIn}°C</span>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Operational Runtime (Simulation Hours)</label>
+                      <div className="slider-container">
+                        <input type="range" className="slider-input" min="100" max="2000" step="25" value={hxHours} onChange={(e) => setHxHours(parseFloat(e.target.value))} />
+                        <span className="slider-value">{hxHours} hrs</span>
+                      </div>
+                    </div>
+
+                    <hr style={{ border: '0', borderTop: '1px solid rgba(255,255,255,0.06)', margin: '16px 0' }} />
+                    <h5 style={{ marginBottom: '10px', fontSize: '0.85rem', color: '#fff' }}>⚡ Operational Stress Presets</h5>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button className="btn btn-primary" style={{ flexGrow: 1 }} onClick={() => { setHxUnit('E01'); setHxTubeIn(120); setHxTubeOut(155); setHxHours(250); }}>
+                        ✅ Clean Baseline
+                      </button>
+                      <button className="btn btn-danger" style={{ flexGrow: 1 }} onClick={() => { setHxUnit('E02'); setHxTubeIn(145); setHxTubeOut(162); setHxHours(1850); }}>
+                        🚨 Severe Fouling (E02)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* HX Assessment Results Card */}
+                  <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <h4 style={{ margin: 0 }}>📊 TEMA Fouling Assessment</h4>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Tubular Exchanger Manufacturers Association standard</span>
+                      </div>
+                      <span className={`status-pill ${hxResult?.risk_level === 'CRITICAL' ? 'critical' : (hxResult?.risk_level === 'WARNING' ? 'warning' : 'safe')}`}>
+                        {hxResult?.status || 'OPERATING NORMAL'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 0' }}>
+                      <Gauge 
+                        value={hxResult?.fouling_pct || 15} 
+                        size={210} 
+                        title="TEMA Fouling Resistance (%)"
+                        threshold={70}
+                      />
+                    </div>
+
+                    <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                      <div className="kpi-card">
+                        <span className="kpi-title">Thermal Heat Duty</span>
+                        <span className="kpi-value" style={{ color: '#38bdf8' }}>{hxResult?.thermal_metrics?.duty_kW || 3150} kW</span>
+                        <span className="kpi-sub">Tube ΔT: {hxResult?.thermal_metrics?.delta_t_tube_C || 30}°C</span>
+                      </div>
+                      <div className="kpi-card">
+                        <span className="kpi-title">Fouling Resistance (Rf)</span>
+                        <span className="kpi-value" style={{ color: hxResult?.risk_level === 'CRITICAL' ? 'var(--color-critical)' : '#10b981' }}>
+                          {hxResult?.fouling_resistance_m2KW || 0.0003}
+                        </span>
+                        <span className="kpi-sub">TEMA Limit: 0.0005 m²K/W</span>
+                      </div>
+                      <div className="kpi-card">
+                        <span className="kpi-title">Energy Penalty</span>
+                        <span className="kpi-value" style={{ color: 'var(--color-warning)' }}>
+                          ${hxResult?.energy_penalty_dollars_per_day || 0}
+                        </span>
+                        <span className="kpi-sub">Per day in furnace fuel</span>
+                      </div>
+                      <div className="kpi-card">
+                        <span className="kpi-title">Fouling Saturation</span>
+                        <span className="kpi-value" style={{ color: '#fff' }}>{hxResult?.fouling_pct || 0}%</span>
+                        <span className="kpi-sub">Of maximum design margin</span>
+                      </div>
+                    </div>
+
+                    <div style={{ background: 'rgba(15, 23, 42, 0.75)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '14px' }}>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>RECOMMENDED ACTION</div>
+                      <div style={{ color: '#fff', fontSize: '0.9rem' }}>{hxResult?.recommendation || 'Continue standard condition monitoring.'}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ------------------------------------------------------------- */}
+            {/* TWIN 3: BEARING VIBRATION CONTROLS & GAUGES */}
+            {/* ------------------------------------------------------------- */}
+            {activeTwin === 'bearing' && (
+              <div>
+                <div className="section-header">🔄 IMS Bearing Vibration & Remaining Useful Life (RUL) Twin</div>
+                <div className="grid-2">
+                  <div className="glass-card">
+                    <h4>🛠️ Vibration Sensor Inputs</h4>
+                    <div className="form-group">
+                      <label>Bearing Accelerometer Channel</label>
+                      <select className="form-select" value={bearingId} onChange={(e) => setBearingId(e.target.value)}>
+                        <option value="Bearing1">Bearing 1 — Drive End (Test Rig #2)</option>
+                        <option value="Bearing2">Bearing 2 — Non-Drive End</option>
+                        <option value="Bearing3">Bearing 3 — Intermediate Support</option>
+                        <option value="Bearing4">Bearing 4 — Radial Load Support</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Vibration RMS Acceleration (g)</label>
+                      <div className="slider-container">
+                        <input type="range" className="slider-input" min="0.05" max="2.8" step="0.01" value={bearingRms} onChange={(e) => setBearingRms(parseFloat(e.target.value))} />
+                        <span className="slider-value">{bearingRms.toFixed(2)} g</span>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Signal Kurtosis (Impulsiveness Index)</label>
+                      <div className="slider-container">
+                        <input type="range" className="slider-input" min="1.5" max="15.0" step="0.1" value={bearingKurt} onChange={(e) => setBearingKurt(parseFloat(e.target.value))} />
+                        <span className="slider-value">{bearingKurt.toFixed(1)}</span>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Peak-to-Peak Acceleration (g)</label>
+                      <div className="slider-container">
+                        <input type="range" className="slider-input" min="0.2" max="6.0" step="0.1" value={bearingP2P} onChange={(e) => setBearingP2P(parseFloat(e.target.value))} />
+                        <span className="slider-value">{bearingP2P.toFixed(1)} g</span>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Spindle Rotational Speed (RPM)</label>
+                      <div className="slider-container">
+                        <input type="range" className="slider-input" min="1000" max="3000" step="50" value={bearingRpm} onChange={(e) => setBearingRpm(parseInt(e.target.value))} />
+                        <span className="slider-value">{bearingRpm} RPM</span>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Elapsed Run-to-Failure Hours</label>
+                      <div className="slider-container">
+                        <input type="range" className="slider-input" min="10" max="200" step="2" value={bearingHours} onChange={(e) => setBearingHours(parseInt(e.target.value))} />
+                        <span className="slider-value">{bearingHours} hrs</span>
+                      </div>
+                    </div>
+
+                    <hr style={{ border: '0', borderTop: '1px solid rgba(255,255,255,0.06)', margin: '16px 0' }} />
+                    <h5 style={{ marginBottom: '10px', fontSize: '0.85rem', color: '#fff' }}>⚡ Vibration Failure Presets</h5>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button className="btn btn-primary" style={{ flexGrow: 1 }} onClick={() => { setBearingRms(0.22); setBearingKurt(3.0); setBearingP2P(0.8); }}>
+                        ✅ ISO Zone A (New)
+                      </button>
+                      <button className="btn btn-danger" style={{ flexGrow: 1 }} onClick={() => { setBearingRms(1.95); setBearingKurt(8.4); setBearingP2P(4.5); }}>
+                        🚨 Outer Race Spall (Zone D)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Bearing Results Card */}
+                  <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <h4 style={{ margin: 0 }}>📊 ISO 10816-3 & RUL Status</h4>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Class II medium rotating machinery standard</span>
+                      </div>
+                      <span className={`status-pill ${bearingResult?.risk_level === 'CRITICAL' ? 'critical' : (bearingResult?.risk_level === 'WARNING' ? 'warning' : 'safe')}`}>
+                        {bearingResult?.iso_zone}: {bearingResult?.iso_status}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 0' }}>
+                      <Gauge 
+                        value={((bearingResult?.probability || 0.18) * 100).toFixed(1)} 
+                        size={210} 
+                        title="Bearing Failure Probability (%)"
+                        threshold={40}
+                      />
+                    </div>
+
+                    <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                      <div className="kpi-card">
+                        <span className="kpi-title">Predicted RUL</span>
+                        <span className="kpi-value" style={{ color: bearingResult?.predicted_rul_hours < 20 ? 'var(--color-critical)' : '#38bdf8' }}>
+                          {bearingResult?.predicted_rul_hours || 85} hrs
+                        </span>
+                        <span className="kpi-sub">Remaining Useful Life</span>
+                      </div>
+                      <div className="kpi-card">
+                        <span className="kpi-title">Outer Race Defect (BPFO)</span>
+                        <span className="kpi-value" style={{ color: '#fff' }}>
+                          {bearingResult?.fault_frequencies?.['BPFO (Outer Race)'] || 119.5} Hz
+                        </span>
+                        <span className="kpi-sub">Inner Race (BPFI): {bearingResult?.fault_frequencies?.['BPFI (Inner Race)'] || 180.5} Hz</span>
+                      </div>
+                      <div className="kpi-card">
+                        <span className="kpi-title">Vibration Severity</span>
+                        <span className="kpi-value" style={{ color: bearingResult?.risk_level === 'CRITICAL' ? 'var(--color-critical)' : '#10b981' }}>
+                          {bearingRms.toFixed(2)} g RMS
+                        </span>
+                        <span className="kpi-sub">Kurtosis: {bearingKurt.toFixed(1)}</span>
+                      </div>
+                      <div className="kpi-card">
+                        <span className="kpi-title">Degradation Stage</span>
+                        <span className="kpi-value" style={{ color: '#fff', fontSize: '1.05rem' }}>
+                          {bearingResult?.degradation_stage || 'Healthy (Normal)'}
+                        </span>
+                        <span className="kpi-sub">Continuous run cycle</span>
+                      </div>
+                    </div>
+
+                    <div style={{ background: 'rgba(15, 23, 42, 0.75)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '14px' }}>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>RECOMMENDED ACTION</div>
+                      <div style={{ color: '#fff', fontSize: '0.9rem' }}>{bearingResult?.recommendation || 'Normal operation. Maintain regular vibration trending.'}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ------------------------------------------------------------- */}
+            {/* TWIN 1: CNC MILLING MACHINE (ORIGINAL) */}
+            {/* ------------------------------------------------------------- */}
+            {activeTwin === 'milling' && (
+              <div>
             <div className="section-header">⚙️ Telemetry Controls & AI Assessment</div>
             <div className="grid-2">
               {/* Telemetry overrides */}
@@ -708,6 +1073,8 @@ export default function App() {
             </div>
           </div>
         )}
+      </div>
+    )}
 
 
 
@@ -868,38 +1235,117 @@ export default function App() {
               <div>
                 <div className="section-header">🚨 Fleet Risk Status & Warning List</div>
                 <div className="table-container" style={{ maxHeight: '400px' }}>
+                                    {/* Asset Category Banner */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', background: 'rgba(15, 23, 42, 0.6)', padding: '10px 16px', borderRadius: '10px', border: '1px solid var(--card-border)' }}>
+                    <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Detected Stream Asset:</span>
+                    <span style={{ background: 'var(--color-primary)', color: '#fff', padding: '3px 10px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 600 }}>
+                      {batchData.stats.asset_category || 'Industrial Fleet'}
+                    </span>
+                    <span style={{ fontSize: '0.85rem', color: '#fff', marginLeft: 'auto' }}>
+                      Evaluated: <strong>{batchData.stats.total.toLocaleString()} rows</strong>
+                    </span>
+                  </div>
+
                   <table className="styled-table">
                     <thead>
                       <tr>
-                        <th>UDI</th>
-                        <th>Type</th>
-                        <th>Air Temp [K]</th>
-                        <th>Process Temp [K]</th>
-                        <th>Rotational Speed [rpm]</th>
-                        <th>Torque [Nm]</th>
-                        <th>Tool Wear [min]</th>
-                        <th>Failure Probability (%)</th>
-                        <th>Risk Level</th>
+                        {batchData.stats.dataset_type === 'heat_exchanger' ? (
+                          <>
+                            <th>Row #</th>
+                            <th>Crude API</th>
+                            <th>Crude TAN</th>
+                            <th>E01 Tube In (°C)</th>
+                            <th>E01 Tube Out (°C)</th>
+                            <th>E02 Tube In (°C)</th>
+                            <th>E02 Tube Out (°C)</th>
+                            <th>Fouling Rf (m²K/W)</th>
+                            <th>Failure Probability (%)</th>
+                            <th>Risk Level</th>
+                          </>
+                        ) : batchData.stats.dataset_type === 'bearing' ? (
+                          <>
+                            <th>Sample #</th>
+                            <th>Test ID</th>
+                            <th>Timestamp</th>
+                            <th>Bearing RMS (g)</th>
+                            <th>Kurtosis</th>
+                            <th>ISO Severity</th>
+                            <th>Failure Probability (%)</th>
+                            <th>Risk Level</th>
+                          </>
+                        ) : (
+                          <>
+                            <th>UDI</th>
+                            <th>Type</th>
+                            <th>Air Temp [K]</th>
+                            <th>Process Temp [K]</th>
+                            <th>Rotational Speed [rpm]</th>
+                            <th>Torque [Nm]</th>
+                            <th>Tool Wear [min]</th>
+                            <th>Failure Probability (%)</th>
+                            <th>Risk Level</th>
+                          </>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
                       {batchData.records.slice(0, 500).map((r, idx) => (
                         <tr key={idx}>
-                          <td style={{ color: '#fff', fontWeight: 600 }}>{r.UDI || idx + 1}</td>
-                          <td>{r.Type}</td>
-                          <td>{r["Air temperature [K]"]}</td>
-                          <td>{r["Process temperature [K]"]}</td>
-                          <td>{r["Rotational speed [rpm]"]}</td>
-                          <td>{r["Torque [Nm]"]}</td>
-                          <td>{r["Tool wear [min]"]}</td>
-                          <td style={{ fontWeight: 600, color: '#fff' }}>{r["Failure Probability (%)"]}%</td>
-                          <td>
-                            <span className={`status-pill ${
-                              r["Risk Level"]?.includes('CRITICAL') ? 'critical' : (r["Risk Level"]?.includes('WARNING') ? 'warning' : 'safe')
-                            }`}>
-                              {r["Risk Level"]?.split(' ').slice(1).join(' ') || r["Risk Level"]}
-                            </span>
-                          </td>
+                          {batchData.stats.dataset_type === 'heat_exchanger' ? (
+                            <>
+                              <td style={{ color: '#fff', fontWeight: 600 }}>{idx + 1}</td>
+                              <td>{r.Crude_API || '32.0'}</td>
+                              <td>{r.Crude_TAN || '0.8'}</td>
+                              <td>{r.E01_Crude_Tube_T_In_degC ?? r['E01_Crude_Tube_T_In_degC'] ?? '-'}</td>
+                              <td>{r.E01_Crude_Tube_T_Out_degC ?? r['E01_Crude_Tube_T_Out_degC'] ?? '-'}</td>
+                              <td>{r.E02_Crude_Tube_T_In_degC ?? r['E02_Crude_Tube_T_In_degC'] ?? '-'}</td>
+                              <td>{r.E02_Crude_Tube_T_Out_degC ?? r['E02_Crude_Tube_T_Out_degC'] ?? '-'}</td>
+                              <td style={{ color: '#38bdf8' }}>{r['Fouling Resistance (m²K/W)'] ?? '0.00032'}</td>
+                              <td style={{ fontWeight: 600, color: '#fff' }}>{r["Failure Probability (%)"]}%</td>
+                              <td>
+                                <span className={`status-pill ${
+                                  r["Risk Level"]?.includes('CRITICAL') ? 'critical' : (r["Risk Level"]?.includes('WARNING') ? 'warning' : 'safe')
+                                }`}>
+                                  {r["Risk Level"]}
+                                </span>
+                              </td>
+                            </>
+                          ) : batchData.stats.dataset_type === 'bearing' ? (
+                            <>
+                              <td style={{ color: '#fff', fontWeight: 600 }}>{idx + 1}</td>
+                              <td>{r.test_id || 2}</td>
+                              <td style={{ fontSize: '0.78rem' }}>{r.timestamp || `T+${idx * 10}m`}</td>
+                              <td>{Number(r.Bearing1_x_rms || r.Bearing1_rms || r.rms || 0.35).toFixed(3)}</td>
+                              <td>{Number(r.Bearing1_x_kurtosis || r.Bearing1_kurtosis || r.kurtosis || 3.2).toFixed(2)}</td>
+                              <td style={{ color: '#38bdf8' }}>{r['ISO Severity'] || 'Zone B (Normal)'}</td>
+                              <td style={{ fontWeight: 600, color: '#fff' }}>{r["Failure Probability (%)"]}%</td>
+                              <td>
+                                <span className={`status-pill ${
+                                  r["Risk Level"]?.includes('CRITICAL') ? 'critical' : (r["Risk Level"]?.includes('WARNING') ? 'warning' : 'safe')
+                                }`}>
+                                  {r["Risk Level"]}
+                                </span>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td style={{ color: '#fff', fontWeight: 600 }}>{r.UDI || idx + 1}</td>
+                              <td>{r.Type}</td>
+                              <td>{r["Air temperature [K]"]}</td>
+                              <td>{r["Process temperature [K]"]}</td>
+                              <td>{r["Rotational speed [rpm]"]}</td>
+                              <td>{r["Torque [Nm]"]}</td>
+                              <td>{r["Tool wear [min]"]}</td>
+                              <td style={{ fontWeight: 600, color: '#fff' }}>{r["Failure Probability (%)"]}%</td>
+                              <td>
+                                <span className={`status-pill ${
+                                  r["Risk Level"]?.includes('CRITICAL') ? 'critical' : (r["Risk Level"]?.includes('WARNING') ? 'warning' : 'safe')
+                                }`}>
+                                  {r["Risk Level"]?.split(' ').slice(1).join(' ') || r["Risk Level"]}
+                                </span>
+                              </td>
+                            </>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -1155,7 +1601,11 @@ export default function App() {
                     whiteSpace: 'pre-wrap',
                     border: msg.sender === 'user' ? 'none' : '1px solid var(--card-border)'
                   }}>
-                    {msg.text}
+                    {msg.sender === 'user' ? (
+                      <div style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</div>
+                    ) : (
+                      <MarkdownMessage text={msg.text} />
+                    )}
                   </div>
                 </div>
               ))}
